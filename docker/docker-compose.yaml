@@ -1,0 +1,75 @@
+name: kpis-sistema
+
+services:
+  postgres:
+    image: postgres:18.1-trixie
+    container_name: kpis_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: "12345678"
+      POSTGRES_DB: kpis_db  # BD principal de tu app
+    ports:
+      - "5432:5432"
+    volumes:
+      - kpis_pg_data:/var/lib/postgresql
+      # ✅ SCRIPT PARA CREAR BD ADICIONAL
+      - ./init-scripts:/docker-entrypoint-initdb.d
+    networks:
+      - kpis_network
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres -d kpis_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 20s
+
+  keycloak:
+    image: quay.io/keycloak/keycloak:26.3.5
+    container_name: kpis_keycloak
+    restart: unless-stopped
+    environment:
+      # ✅ CONECTAR A BD SEPARADA
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak_db
+      KC_DB_USERNAME: postgres
+      KC_DB_PASSWORD: "12345678"
+      KC_DB_SCHEMA: public
+      # Configuración de servidor
+      KC_HOSTNAME: localhost
+      KC_HTTP_ENABLED: true
+      KC_HEALTH_ENABLED: true
+      KC_METRICS_ENABLED: true
+      # Admin bootstrap
+      KC_BOOTSTRAP_ADMIN_USERNAME: admin
+      KC_BOOTSTRAP_ADMIN_PASSWORD: admin
+      # Logging
+      KC_LOG_LEVEL: INFO
+    ports:
+      - "8080:8080"
+    volumes:
+      # ✅ VOLÚMEN PARA DATOS DE KEYCLOAK
+      - kpis_kc_data:/opt/keycloak/data
+    networks:
+      - kpis_network
+    depends_on:
+      postgres:
+        condition: service_healthy
+    command: 
+      - start-dev
+      - --import-realm
+      - -Dquarkus.http.host=0.0.0.0
+    healthcheck:
+      test: ["CMD-SHELL", "curl -f http://localhost:8080/ 2>/dev/null || exit 1"]
+      interval: 15s
+      timeout: 5s
+      retries: 10
+      start_period: 45s
+
+networks:
+  kpis_network:
+    driver: bridge
+
+volumes:
+  kpis_pg_data:
+  kpis_kc_data:

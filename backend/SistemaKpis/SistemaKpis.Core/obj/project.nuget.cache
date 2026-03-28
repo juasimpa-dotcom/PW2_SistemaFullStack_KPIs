@@ -1,0 +1,11 @@
+{
+  "version": 2,
+  "dgSpecHash": "9GxKwXBWqrE=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\juasi\\ProyectoWeb_FullStack\\backend\\SistemaKpis\\SistemaKpis.Core\\SistemaKpis.Core.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\juasi\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.3\\microsoft.extensions.dependencyinjection.abstractions.9.0.3.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.3\\microsoft.extensions.logging.abstractions.9.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}

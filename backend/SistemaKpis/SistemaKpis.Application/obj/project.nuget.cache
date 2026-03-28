@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "dgSpecHash": "+w9KkkER3vA=",
+  "success": true,
+  "projectFilePath": "C:\\Users\\juasi\\ProyectoWeb_FullStack\\backend\\SistemaKpis\\SistemaKpis.Application\\SistemaKpis.Application.csproj",
+  "expectedPackageFiles": [
+    "C:\\Users\\juasi\\.nuget\\packages\\fluentvalidation\\11.11.0\\fluentvalidation.11.11.0.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\fluentvalidation.dependencyinjectionextensions\\11.11.0\\fluentvalidation.dependencyinjectionextensions.11.11.0.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\mediatr\\12.4.1\\mediatr.12.4.1.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\mediatr.contracts\\2.0.1\\mediatr.contracts.2.0.1.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\microsoft.extensions.dependencyinjection.abstractions\\9.0.3\\microsoft.extensions.dependencyinjection.abstractions.9.0.3.nupkg.sha512",
+    "C:\\Users\\juasi\\.nuget\\packages\\microsoft.extensions.logging.abstractions\\9.0.3\\microsoft.extensions.logging.abstractions.9.0.3.nupkg.sha512"
+  ],
+  "logs": []
+}
