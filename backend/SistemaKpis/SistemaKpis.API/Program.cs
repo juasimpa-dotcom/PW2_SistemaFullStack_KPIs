@@ -10,6 +10,8 @@ using SistemaKpis.Infrastructure.Data;
 using SistemaKpis.Infrastructure.Repositorios;
 using SistemaKpis.Infrastructure.Servicios;
 using System.Text;
+using System.Text.Json;  // ← Para JsonDocument
+using System.Security.Claims;  // ← Para ClaimsIdentity
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -62,12 +64,14 @@ builder.Services.AddDbContext<KpisDbContext>(options =>
     ));
 
 // Configurar Autenticación JWT con Keycloak
+// Configurar Autenticación JWT con Keycloak
+// Configurar mapeo de roles de Keycloak
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
     .AddJwtBearer(options =>
     {
         options.Authority = builder.Configuration["Jwt:Authority"];
         options.Audience = builder.Configuration["Jwt:Audience"];
-        options.RequireHttpsMetadata = false;  // ← Importante para desarrollo
+        options.RequireHttpsMetadata = false;
 
         options.TokenValidationParameters = new TokenValidationParameters
         {
@@ -76,16 +80,61 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
             ValidateLifetime = true,
             ValidateIssuerSigningKey = true,
             ValidIssuer = builder.Configuration["Jwt:Authority"],
-            ValidAudience = builder.Configuration["Jwt:Audience"]
+            ValidAudience = builder.Configuration["Jwt:Audience"],
+            NameClaimType = "preferred_username",
+            RoleClaimType = "role"
+        };
+
+        // Mapear client roles a claims
+        options.Events = new JwtBearerEvents
+        {
+            OnTokenValidated = context =>
+            {
+                var claimsIdentity = context.Principal?.Identity as ClaimsIdentity;
+                if (claimsIdentity == null) return Task.CompletedTask;
+
+                // Obtener resource_access del token
+                var resourceAccessClaim = context.Principal?.FindFirst("resource_access");
+                if (resourceAccessClaim != null)
+                {
+                    try
+                    {
+                        using var jsonDoc = JsonDocument.Parse(resourceAccessClaim.Value);
+                        var root = jsonDoc.RootElement;
+
+                        // Buscar roles para el client
+                        var clientId = builder.Configuration["Keycloak:ClientId"];
+                        if (root.TryGetProperty(clientId, out var clientRoles) &&
+                            clientRoles.TryGetProperty("roles", out var rolesArray))
+                        {
+                            foreach (var role in rolesArray.EnumerateArray())
+                            {
+                                var roleName = role.GetString();
+                                if (!string.IsNullOrEmpty(roleName))
+                                {
+                                    claimsIdentity.AddClaim(new Claim(ClaimTypes.Role, roleName));
+                                }
+                            }
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        context.HttpContext.RequestServices
+                            .GetRequiredService<ILogger<Program>>()
+                            .LogWarning(ex, "Error al mapear roles del token");
+                    }
+                }
+
+                return Task.CompletedTask;
+            }
         };
     });
 
 // Configurar Autorización por roles
+// Configurar Autorización por roles
 builder.Services.AddAuthorizationBuilder()
-    .AddPolicy("VendedorPolicy", policy =>
-        policy.RequireRole("vendedor").RequireAuthenticatedUser())
-    .AddPolicy("SupervisorPolicy", policy =>
-        policy.RequireRole("supervisor", "vendedor").RequireAuthenticatedUser());
+    .AddPolicy("AuthenticatedUser", policy =>
+        policy.RequireAuthenticatedUser());
 
 // Registrar repositorios
 builder.Services.AddScoped(typeof(IRepositorioBase<>), typeof(RepositorioBase<>));
@@ -103,7 +152,8 @@ builder.Services.AddCors(options =>
             .WithOrigins("http://localhost:4200")
             .AllowAnyMethod()
             .AllowAnyHeader()
-            .AllowCredentials());
+            .AllowCredentials()  // ← Importante para auth headers
+            .WithExposedHeaders("Authorization", "WWW-Authenticate"));  // ← Exponer headers de error
 });
 
 var app = builder.Build();
@@ -120,11 +170,10 @@ if (app.Environment.IsDevelopment())
 }
 
 app.UseHttpsRedirection();
-app.UseCors("AllowAngular");
-
-// ⚠️ IMPORTANTE: El orden de estos middlewares es CRÍTICO
+app.UseCors("AllowAngular");  // ← ✅ DEBE ESTAR ANTES de UseAuthentication
 app.UseAuthentication();
 app.UseAuthorization();
+app.MapControllers();
 
 app.MapControllers();
 

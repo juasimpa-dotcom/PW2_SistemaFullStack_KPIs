@@ -1,14 +1,12 @@
-﻿using Microsoft.AspNetCore.Mvc;
-using SistemaKpis.Core.Interfaces;  // ✅ CAMBIO: De Core.Interfaces a Application.Interfaces
-using SistemaKpis.Application.DTOs.KPIs;
+﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
 using SistemaKpis.Application.Interfaces;
-using Microsoft.AspNetCore.Authorization;
 
 namespace SistemaKpis.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]  // ← Requiere autenticación para todos los endpoints
+[Authorize]  // ← Requiere autenticación (sin políticas)
 public class KpisController : ControllerBase
 {
     private readonly IKpiServicio _kpiServicio;
@@ -24,16 +22,12 @@ public class KpisController : ControllerBase
 
     // GET: api/kpis/usuario/5?fechaInicio=2026-03-01&fechaFin=2026-03-31
     [HttpGet("usuario/{usuarioId}")]
-    [Authorize(Policy = "VendedorPolicy")]  // ← Solo vendedores pueden ver SUS datos
+    [Authorize]  // ← CAMBIAR: Quitar Policy = "VendedorPolicy"
     public async Task<ActionResult> ObtenerKpiGeneral(
         int usuarioId,
         [FromQuery] DateTime fechaInicio,
         [FromQuery] DateTime fechaFin)
     {
-        // Verificar que el usuario solo pueda ver sus propios KPIs
-        var userIdClaim = User.FindFirst("sub")?.Value;
-        // Aquí podrías validar que usuarioId coincide con el token
-
         try
         {
             var kpi = await _kpiServicio.ObtenerKpiGeneralAsync(usuarioId, fechaInicio, fechaFin);
@@ -46,9 +40,9 @@ public class KpisController : ControllerBase
         }
     }
 
-    // GET: api/kpis/equipo?fechaInicio=2026-03-01&fechaFin=2026-03-31
+    // GET: api/kpis/equipo
     [HttpGet("equipo")]
-    [Authorize(Policy = "SupervisorPolicy")]  // ← Solo supervisores pueden ver el equipo
+    [Authorize]  // ← CAMBIAR: Quitar Policy = "SupervisorPolicy"
     public async Task<ActionResult> ObtenerResumenEquipo(
         [FromQuery] DateTime fechaInicio,
         [FromQuery] DateTime fechaFin)
@@ -65,9 +59,9 @@ public class KpisController : ControllerBase
         }
     }
 
-    // GET: api/kpis/servicios-mas-vendidos?fechaInicio=2026-03-01&fechaFin=2026-03-31
+    // GET: api/kpis/servicios-mas-vendidos
     [HttpGet("servicios-mas-vendidos")]
-    [Authorize(Policy = "SupervisorPolicy")]  // ← Solo supervisores
+    [Authorize]  // ← CAMBIAR: Quitar Policy = "SupervisorPolicy"
     public async Task<ActionResult> ObtenerServiciosMasVendidos(
         [FromQuery] DateTime fechaInicio,
         [FromQuery] DateTime fechaFin)
