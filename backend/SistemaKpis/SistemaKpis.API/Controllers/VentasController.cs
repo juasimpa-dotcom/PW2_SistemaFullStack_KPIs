@@ -1,160 +1,195 @@
+﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
-using SistemaKpis.Application.DTOs.Ventas;
+using Microsoft.EntityFrameworkCore;
+using SistemaKpis.Core.Entidades.Catalogos;
 using SistemaKpis.Core.Entidades.Transacciones;
-using SistemaKpis.Core.Interfaces;
+using SistemaKpis.Infrastructure.Data;
 
 namespace SistemaKpis.API.Controllers;
 
 [ApiController]
 [Route("api/[controller]")]
+[Authorize]
 public class VentasController : ControllerBase
 {
-    private readonly IVentaRepositorio _ventaRepositorio;
+    private readonly KpisDbContext _context;
     private readonly ILogger<VentasController> _logger;
 
-    public VentasController(
-        IVentaRepositorio ventaRepositorio,
-        ILogger<VentasController> logger)
+    // ⚠️ AJUSTA ESTOS IDs según lo que viste en SELECT * FROM roles;
+    private const int ROL_SUPERVISOR_ID = 1;
+    private const int ROL_VENDEDOR_ID = 2;
+
+    public VentasController(KpisDbContext context, ILogger<VentasController> logger)
     {
-        _ventaRepositorio = ventaRepositorio;
+        _context = context;
         _logger = logger;
     }
 
-    // GET: api/ventas
-    [HttpGet]
-    public async Task<ActionResult<IEnumerable<VentaDto>>> ObtenerVentas()
+    // 🔐 Helper: Obtener usuario autenticado desde token Keycloak
+    private async Task<Usuario?> ObtenerUsuarioAutenticado()
     {
-        var ventas = await _ventaRepositorio.ObtenerVentasConDetallesAsync();
+        var keycloakId = User.FindFirst("sub")?.Value;
+        if (string.IsNullOrEmpty(keycloakId) || !Guid.TryParse(keycloakId, out var keycloakGuid))
+            return null;
 
-        var ventasDto = ventas.Select(v => new VentaDto
-        {
-            Id = v.Id,
-            UsuarioId = v.UsuarioId,
-            ClienteId = v.ClienteId,
-            FechaVenta = v.FechaVenta,
-            MontoTotal = v.MontoTotal,
-            CantidadServicios = v.CantidadServicios,
-            Estado = v.Estado,
-            NombreVendedor = v.Vendedor?.NombreCompleto,
-            NombreCliente = v.Cliente?.NombreCompleto,
-            Detalles = v.Detalles.Select(d => new DetalleVentaDto
-            {
-                Id = d.Id,
-                VentaId = d.VentaId,
-                ServicioId = d.ServicioId,
-                Cantidad = d.Cantidad,
-                PrecioUnitario = d.PrecioUnitario,
-                Subtotal = d.Subtotal,
-                NombreServicio = d.Servicio?.Nombre
-            }).ToList()
-        });
-
-        return Ok(ventasDto);
+        return await _context.Usuarios
+            .Include(u => u.Rol)
+            .FirstOrDefaultAsync(u => u.KeycloakId == keycloakGuid && u.Activo);
     }
 
-    // GET: api/ventas/5
-    [HttpGet("{id}")]
-    public async Task<ActionResult<VentaDto>> ObtenerVenta(int id)
+    private bool EsSupervisor(Usuario u) => u.RolId == ROL_SUPERVISOR_ID;
+    private bool EsVendedor(Usuario u) => u.RolId == ROL_VENDEDOR_ID;
+
+    [HttpPost]
+    public async Task<ActionResult<Venta>> RegistrarVenta(RegistrarVentaRequest request)
     {
-        var venta = await _ventaRepositorio.ObtenerVentaConDetallesAsync(id);
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized("Usuario no encontrado");
+        if (!EsVendedor(usuario))
+            return Forbid("Solo los vendedores pueden registrar ventas");
 
-        if (venta == null)
+        var venta = new Venta
         {
-            return NotFound(new { message = $"Venta con ID {id} no encontrada" });
-        }
-
-        var ventaDto = new VentaDto
-        {
-            Id = venta.Id,
-            UsuarioId = venta.UsuarioId,
-            ClienteId = venta.ClienteId,
-            FechaVenta = venta.FechaVenta,
-            MontoTotal = venta.MontoTotal,
-            CantidadServicios = venta.CantidadServicios,
-            Estado = venta.Estado,
-            NombreVendedor = venta.Vendedor?.NombreCompleto,
-            NombreCliente = venta.Cliente?.NombreCompleto,
-            Detalles = venta.Detalles.Select(d => new DetalleVentaDto
-            {
-                Id = d.Id,
-                VentaId = d.VentaId,
-                ServicioId = d.ServicioId,
-                Cantidad = d.Cantidad,
-                PrecioUnitario = d.PrecioUnitario,
-                Subtotal = d.Subtotal,
-                NombreServicio = d.Servicio?.Nombre
-            }).ToList()
+            UsuarioId = usuario.Id,
+            ClienteId = request.ClienteId,
+            FechaVenta = request.FechaVenta ?? DateTime.UtcNow,
+            MontoTotal = request.MontoTotal,
+            CantidadServicios = request.CantidadServicios ?? 1,
+            Estado = "completada"
         };
 
-        return Ok(ventaDto);
+        _context.Ventas.Add(venta);
+        await _context.SaveChangesAsync();
+
+        return CreatedAtAction(nameof(ObtenerVenta), new { id = venta.Id }, venta);
     }
 
-    // POST: api/ventas
-    [HttpPost]
-    public async Task<ActionResult<VentaDto>> CrearVenta(CrearVentaDto dto)
+    [HttpGet("mis-ventas")]
+    public async Task<ActionResult<List<VentaDto>>> ObtenerMisVentas(
+        [FromQuery] DateTime? fechaInicio, [FromQuery] DateTime? fechaFin)
     {
-        try
-        {
-            // Calcular totales
-            var montoTotal = 0m;
-            var cantidadServicios = 0;
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized("Usuario no encontrado");
 
-            foreach (var detalle in dto.Detalles)
+        var query = _context.Ventas
+            .Where(v => v.UsuarioId == usuario.Id)
+            .Include(v => v.Cliente)
+            .AsQueryable();
+
+        if (fechaInicio.HasValue) query = query.Where(v => v.FechaVenta >= fechaInicio.Value);
+        if (fechaFin.HasValue) query = query.Where(v => v.FechaVenta <= fechaFin.Value);
+
+        // ✅ CORREGIDO: Usar condición ternaria en lugar de ?.
+        var ventas = await query
+            .OrderByDescending(v => v.FechaVenta)
+            .Select(v => new VentaDto(
+                v.Id,
+                v.Cliente != null ? v.Cliente.NombreCompleto : "Sin cliente",
+                v.MontoTotal,
+                v.CantidadServicios,
+                v.FechaVenta,
+                v.Estado
+            ))
+            .ToListAsync();
+
+        return Ok(ventas);
+    }
+
+    [HttpGet("equipo")]
+    public async Task<ActionResult<VentasEquipoDto>> ObtenerVentasEquipo(
+        [FromQuery] int? vendedorId,
+        [FromQuery] DateTime? fechaInicio, [FromQuery] DateTime? fechaFin)
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized("Usuario no encontrado");
+        if (!EsSupervisor(usuario))
+            return Forbid("Solo los supervisores pueden ver ventas del equipo");
+
+        var query = _context.Ventas.Include(v => v.Vendedor).AsQueryable();
+
+        if (vendedorId.HasValue) query = query.Where(v => v.UsuarioId == vendedorId.Value);
+        if (fechaInicio.HasValue) query = query.Where(v => v.FechaVenta >= fechaInicio.Value);
+        if (fechaFin.HasValue) query = query.Where(v => v.FechaVenta <= fechaFin.Value);
+
+        var resumen = await query
+            .GroupBy(v => v.UsuarioId)
+            .Select(g => new
             {
-                var subtotal = detalle.Cantidad * detalle.PrecioUnitario;
-                montoTotal += subtotal;
-                cantidadServicios += detalle.Cantidad;
-            }
+                VendedorId = g.Key,
+                VendedorNombre = g.First().Vendedor.NombreCompleto,
+                TotalVentas = g.Sum(v => v.MontoTotal),
+                TotalUnidades = g.Sum(v => v.CantidadServicios),
+                CantidadVentas = g.Count()
+            })
+            .ToListAsync();
 
-            // Crear venta
-            var venta = new Venta
-            {
-                UsuarioId = dto.UsuarioId,
-                ClienteId = dto.ClienteId,
-                FechaVenta = dto.FechaVenta,
-                MontoTotal = montoTotal,
-                CantidadServicios = cantidadServicios,
-                Estado = dto.Estado,
-                Detalles = dto.Detalles.Select(d => new DetalleVenta
-                {
-                    ServicioId = d.ServicioId,
-                    Cantidad = d.Cantidad,
-                    PrecioUnitario = d.PrecioUnitario,
-                    Subtotal = d.Cantidad * d.PrecioUnitario
-                }).ToList()
-            };
+        var resumenObjects = resumen.Select(r => (object)r).ToList();
 
-            await _ventaRepositorio.AgregarAsync(venta);
+        return Ok(new VentasEquipoDto(
+            resumenObjects,
+            resumen.Sum(r => r.TotalVentas),
+            new { Inicio = fechaInicio, Fin = fechaFin }
+        ));
+    }
 
-            // Retornar la venta creada con detalles
-            var ventaCreada = await _ventaRepositorio.ObtenerVentaConDetallesAsync(venta.Id);
+    [HttpGet("mi-perfil")]
+    public async Task<ActionResult<UsuarioPerfilDto>> ObtenerMiPerfil()
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized("Usuario no encontrado");
 
-            var ventaDto = new VentaDto
-            {
-                Id = ventaCreada!.Id,
-                UsuarioId = ventaCreada.UsuarioId,
-                ClienteId = ventaCreada.ClienteId,
-                FechaVenta = ventaCreada.FechaVenta,
-                MontoTotal = ventaCreada.MontoTotal,
-                CantidadServicios = ventaCreada.CantidadServicios,
-                Estado = ventaCreada.Estado,
-                Detalles = ventaCreada.Detalles.Select(d => new DetalleVentaDto
-                {
-                    Id = d.Id,
-                    VentaId = d.VentaId,
-                    ServicioId = d.ServicioId,
-                    Cantidad = d.Cantidad,
-                    PrecioUnitario = d.PrecioUnitario,
-                    Subtotal = d.Subtotal
-                }).ToList()
-            };
+        return Ok(new UsuarioPerfilDto(
+            usuario.Id,
+            usuario.NombreCompleto,
+            usuario.Correo,
+            usuario.Rol.Nombre,
+            EsSupervisor(usuario)
+        ));
+    }
 
-            return CreatedAtAction(nameof(ObtenerVenta), new { id = venta.Id }, ventaDto);
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error al crear venta");
-            return BadRequest(new { message = "Error al crear la venta", error = ex.Message });
-        }
+    [HttpGet("{id}")]
+    public async Task<ActionResult<Venta>> ObtenerVenta(int id)
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized("Usuario no encontrado");
+
+        var venta = await _context.Ventas
+            .Include(v => v.Vendedor)
+            .Include(v => v.Cliente)
+            .Include(v => v.Detalles).ThenInclude(d => d.Servicio)
+            .FirstOrDefaultAsync(v => v.Id == id);
+
+        if (venta == null) return NotFound("Venta no encontrada");
+
+        if (EsVendedor(usuario) && venta.UsuarioId != usuario.Id)
+            return Forbid("No tienes permiso para ver esta venta");
+
+        return venta;
     }
 }
+
+public record RegistrarVentaRequest(
+    int ClienteId,
+    decimal MontoTotal,
+    int? CantidadServicios,
+    DateTime? FechaVenta);
+
+public record VentaDto(
+    int Id,
+    string Cliente,
+    decimal Monto,
+    int Unidades,
+    DateTime Fecha,
+    string Estado);
+
+public record VentasEquipoDto(
+    List<object> Resumen,
+    decimal TotalGeneral,
+    object Periodo);
+
+public record UsuarioPerfilDto(
+    int Id,
+    string Nombre,
+    string Email,
+    string Rol,
+    bool EsSupervisor);

@@ -12,8 +12,8 @@ using SistemaKpis.Infrastructure.Data;
 namespace SistemaKpis.Infrastructure.Migrations
 {
     [DbContext(typeof(KpisDbContext))]
-    [Migration("20260328023013_SegundoCreate")]
-    partial class SegundoCreate
+    [Migration("20260331131133_InicializacionBd")]
+    partial class InicializacionBd
     {
         /// <inheritdoc />
         protected override void BuildTargetModel(ModelBuilder modelBuilder)
