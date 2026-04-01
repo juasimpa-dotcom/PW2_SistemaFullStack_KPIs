@@ -1,0 +1,42 @@
+/* 1️⃣ PRIMERO: @use de Angular Material (SOLO UNA VEZ) */
+@use '@angular/material' as mat;
+
+/* 2️⃣ SEGUNDO: Tailwind CSS */
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* 3️⃣ TERCERO: Configuración de tema de Material */
+html {
+  height: 100%;
+  @include mat.theme(
+    (
+      color: (
+        primary: mat.$azure-palette,
+        tertiary: mat.$blue-palette,
+      ),
+      typography: Roboto,
+      density: 0,
+    )
+  );
+}
+
+/* 4️⃣ CUARTO: Estilos globales */
+body {
+  color-scheme: light;
+  background-color: var(--mat-sys-surface);
+  color: var(--mat-sys-on-surface);
+  font: var(--mat-sys-body-medium);
+  margin: 0;
+  height: 100%;
+  font-family: Roboto, 'Helvetica Neue', sans-serif;
+}
+
+/* 5️⃣ QUINTO: Clases utilitarias personalizadas */
+.kpis-card {
+  @apply bg-white rounded-lg shadow-md p-6;
+}
+
+.kpis-title {
+  @apply text-xl font-bold text-gray-800 mb-4;
+}
