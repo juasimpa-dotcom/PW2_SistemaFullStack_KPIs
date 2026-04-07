@@ -25,13 +25,52 @@ public class MetasController : ControllerBase
 
     private async Task<Usuario?> ObtenerUsuarioAutenticado()
     {
-        var keycloakId = User.FindFirst("sub")?.Value;
+        var keycloakId = User.FindFirst("sub")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(keycloakId) || !Guid.TryParse(keycloakId, out var keycloakGuid))
             return null;
         return await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.KeycloakId == keycloakGuid && u.Activo);
     }
 
     private bool EsSupervisor(Usuario? u) => u?.RolId == ROL_SUPERVISOR_ID;
+
+    [HttpGet("periodos")]
+    public async Task<ActionResult<List<PeriodoDto>>> ObtenerPeriodos()
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized();
+
+        var periodos = await _context.Periodos
+            .OrderByDescending(p => p.FechaInicio)
+            .Select(p => new PeriodoDto(p.Id, p.Nombre, p.FechaInicio, p.FechaFin, p.Tipo))
+            .ToListAsync();
+
+        return Ok(periodos);
+    }
+
+    [HttpGet("periodo-actual")]
+    public async Task<ActionResult<PeriodoDto>> ObtenerPeriodoActual()
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized();
+
+        var hoy = DateTime.UtcNow;
+        var periodo = await _context.Periodos
+            .Where(p => p.FechaInicio <= hoy && p.FechaFin >= hoy)
+            .OrderByDescending(p => p.FechaInicio)
+            .FirstOrDefaultAsync();
+
+        if (periodo == null)
+        {
+            periodo = await _context.Periodos
+                .OrderByDescending(p => p.FechaInicio)
+                .FirstOrDefaultAsync();
+        }
+
+        if (periodo == null) return NotFound("No hay periodos disponibles");
+
+        return Ok(new PeriodoDto(periodo.Id, periodo.Nombre, periodo.FechaInicio, periodo.FechaFin, periodo.Tipo));
+    }
 
     [HttpGet]
     public async Task<ActionResult<List<MetaDto>>> ObtenerMetas([FromQuery] int? vendedorId)
@@ -64,8 +103,15 @@ public class MetasController : ControllerBase
         if (usuario == null) return Unauthorized();
         if (!EsSupervisor(usuario)) return Forbid("Solo supervisores pueden asignar metas");
 
+        if (request.UsuarioId <= 0) return BadRequest("Debe seleccionar un vendedor");
+        if (request.MetaMonetaria <= 0) return BadRequest("La meta monetaria debe ser mayor a 0");
+        if (request.MetaCantidad <= 0) return BadRequest("La meta en cantidad debe ser mayor a 0");
+
         var vendedor = await _context.Usuarios.FirstOrDefaultAsync(u => u.Id == request.UsuarioId && u.RolId == ROL_VENDEDOR_ID && u.Activo);
         if (vendedor == null) return BadRequest("Vendedor no encontrado");
+
+        var periodo = await _context.Periodos.FindAsync(request.PeriodoId);
+        if (periodo == null) return BadRequest("Periodo no encontrado");
 
         var existe = await _context.Metas.AnyAsync(m => m.UsuarioId == request.UsuarioId && m.PeriodoId == request.PeriodoId);
         if (existe) return BadRequest("Ya existe una meta para este vendedor en este periodo");
@@ -119,5 +165,6 @@ public class MetasController : ControllerBase
 }
 
 public record MetaDto(int Id, int UsuarioId, string NombreVendedor, int PeriodoId, string PeriodoNombre, DateTime FechaInicio, DateTime FechaFin, decimal MetaMonetaria, int MetaCantidad);
+public record PeriodoDto(int Id, string Nombre, DateTime FechaInicio, DateTime FechaFin, string Tipo);
 public record AsignarMetaRequest(int UsuarioId, int PeriodoId, decimal MetaMonetaria, int MetaCantidad);
 public record ActualizarMetaRequest(decimal MetaMonetaria, int MetaCantidad);

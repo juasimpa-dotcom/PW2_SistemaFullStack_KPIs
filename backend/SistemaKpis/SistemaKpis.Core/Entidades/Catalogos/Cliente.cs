@@ -6,8 +6,10 @@ namespace SistemaKpis.Core.Entidades.Catalogos;
 public class Cliente : EntidadBase
 {
     public string NombreCompleto { get; set; } = string.Empty;
+    public string? Correo { get; set; }
     public string? Telefono { get; set; }
+    public bool Activo { get; set; } = true;
 
-    // Navegación
+    // NavegaciÃ³n
     public virtual ICollection<Venta> Ventas { get; set; } = new List<Venta>();
 }

@@ -24,10 +24,26 @@ public class KpisController : ControllerBase
 
     private async Task<Usuario?> ObtenerUsuarioAutenticado()
     {
-        var keycloakId = User.FindFirst("sub")?.Value;
+        var keycloakId = User.FindFirst("sub")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
+        _logger.LogInformation("KpisController - Buscando usuario con KeycloakId: {KeycloakId}", keycloakId);
+        
         if (string.IsNullOrEmpty(keycloakId) || !Guid.TryParse(keycloakId, out var keycloakGuid))
+        {
+            _logger.LogWarning("KpisController - No se encontró sub o no es GUID válido");
             return null;
-        return await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.KeycloakId == keycloakGuid && u.Activo);
+        }
+        
+        var usuario = await _context.Usuarios.Include(u => u.Rol).FirstOrDefaultAsync(u => u.KeycloakId == keycloakGuid && u.Activo);
+        if (usuario == null)
+        {
+            _logger.LogWarning("KpisController - Usuario no encontrado en BD para KeycloakId: {KeycloakId}", keycloakGuid);
+        }
+        else
+        {
+            _logger.LogInformation("KpisController - Usuario encontrado: {Nombre}, Rol: {Rol}", usuario.NombreCompleto, usuario.Rol?.Nombre);
+        }
+        return usuario;
     }
 
     private bool EsSupervisor(Usuario? u) => u?.RolId == ROL_SUPERVISOR_ID;
@@ -38,7 +54,8 @@ public class KpisController : ControllerBase
     {
         var usuario = await ObtenerUsuarioAutenticado();
         if (usuario == null) return Unauthorized();
-        if (!EsSupervisor(usuario)) return Forbid();
+        
+        if (usuario.RolId != ROL_VENDEDOR_ID && usuario.RolId != ROL_SUPERVISOR_ID) return Forbid();
 
         var ventas = await _context.Ventas.Where(v => v.UsuarioId == usuario.Id && v.FechaVenta >= fechaInicio && v.FechaVenta <= fechaFin).ToListAsync();
 
@@ -141,19 +158,25 @@ public class KpisController : ControllerBase
         if (usuario == null) return Unauthorized();
         if (!EsSupervisor(usuario)) return Forbid();
 
-        var query = _context.DetallesVenta.Include(d => d.Servicio).Include(d => d.Venta)
-            .Where(d => d.Venta.FechaVenta >= fechaInicio && d.Venta.FechaVenta <= fechaFin && d.Venta.Estado == "completada")
+        var query = _context.DetallesVenta
+            .Include(d => d.Servicio)
+            .Include(d => d.Venta)
+            .Where(d => d.Venta.FechaVenta >= fechaInicio && d.Venta.FechaVenta <= fechaFin && d.Venta.Estado == "completada" && d.Servicio != null)
             .AsQueryable();
 
         if (vendedorId.HasValue) query = query.Where(d => d.Venta.UsuarioId == vendedorId.Value);
 
-        var servicios = await query.GroupBy(d => new { d.ServicioId, d.Servicio.Nombre })
+        var servicios = await query
+            .GroupBy(d => new { d.ServicioId, Nombre = d.Servicio != null ? d.Servicio.Nombre : "" })
             .Select(g => new ServicioVendidoDto(g.Key.Nombre, g.Sum(d => d.Cantidad), g.Sum(d => d.Subtotal)))
-            .OrderByDescending(s => s.CantidadVendida)
-            .Take(10)
             .ToListAsync();
 
-        return Ok(servicios);
+        var serviciosOrdenados = servicios
+            .OrderByDescending(s => s.CantidadVendida)
+            .Take(10)
+            .ToList();
+
+        return Ok(serviciosOrdenados);
     }
 
     // KPIs - Vendedores en riesgo (< 50% de avance)

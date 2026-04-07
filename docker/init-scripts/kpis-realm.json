@@ -1,0 +1,133 @@
+{
+  "realm": "kpis-realm",
+  "enabled": true,
+  "sslRequired": "none",
+  "registrationAllowed": false,
+  "loginWithEmailAllowed": true,
+  "duplicateEmailsAllowed": false,
+  "resetPasswordAllowed": true,
+  "editUsernameAllowed": false,
+  "bruteForceProtected": true,
+  "accessTokenLifespan": 300,
+  "accessTokenLifespanForImplicitFlow": 900,
+  "ssoSessionIdleTimeout": 1800,
+  "ssoSessionMaxLifespan": 36000,
+  "offlineSessionIdleTimeout": 2592000,
+  "accessCodeLifespan": 60,
+  "accessCodeLifespanUserAction": 300,
+  "accessCodeLifespanLogin": 1800,
+  "roles": {
+    "realm": [
+      {
+        "name": "admin",
+        "description": "Administrator role",
+        "composite": false
+      },
+      {
+        "name": "user",
+        "description": "User role",
+        "composite": false
+      }
+    ],
+    "client": {
+      "api-kpis-client": [
+        {
+          "name": "admin",
+          "description": "Admin access",
+          "composite": false
+        },
+        {
+          "name": "user",
+          "description": "User access",
+          "composite": false
+        }
+      ]
+    }
+  },
+  "clients": [
+    {
+      "clientId": "api-kpis-client",
+      "enabled": true,
+      "publicClient": false,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": true,
+      "serviceAccountsEnabled": true,
+      "protocol": "openid-connect",
+      "attributes": {
+        "access.token.lifespan": "300",
+        "client.secret.creation.time": "1234567890"
+      },
+      "redirectUris": [
+        "http://localhost:4200/*",
+        "http://localhost:8080/*",
+        "http://frontend/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200",
+        "http://frontend"
+      ],
+      "fullScopeAllowed": true
+    },
+    {
+      "clientId": "frontend-client",
+      "enabled": true,
+      "publicClient": true,
+      "bearerOnly": false,
+      "consentRequired": false,
+      "standardFlowEnabled": true,
+      "implicitFlowEnabled": false,
+      "directAccessGrantsEnabled": false,
+      "protocol": "openid-connect",
+      "redirectUris": [
+        "http://localhost:4200/*"
+      ],
+      "webOrigins": [
+        "http://localhost:4200"
+      ],
+      "fullScopeAllowed": true
+    }
+  ],
+  "users": [
+    {
+      "username": "admin",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "admin@example.com",
+      "firstName": "Admin",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "admin123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["admin"],
+      "clientRoles": {
+        "api-kpis-client": ["admin"]
+      }
+    },
+    {
+      "username": "user",
+      "enabled": true,
+      "emailVerified": true,
+      "email": "user@example.com",
+      "firstName": "Test",
+      "lastName": "User",
+      "credentials": [
+        {
+          "type": "password",
+          "value": "user123",
+          "temporary": false
+        }
+      ],
+      "realmRoles": ["user"],
+      "clientRoles": {
+        "api-kpis-client": ["user"]
+      }
+    }
+  ]
+}

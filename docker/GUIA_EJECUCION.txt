@@ -1,0 +1,184 @@
+================================================================================
+                      SISTEMA KPIs - GUÍA DE EJECUCIÓN
+================================================================================
+
+Este archivo te guiará paso a paso para ejecutar todo el proyecto en CUALQUIER PC.
+
+================================================================================
+                              REQUISITOS
+================================================================================
+
+Antes de empezar, asegúrate de tener instalado:
+- Docker Desktop (Windows/Mac) o Docker Engine (Linux)
+- Al menos 4GB de RAM disponibles
+- Puertos libres: 4200, 5129, 5432, 8080
+
+================================================================================
+                        ESTRUCTURA NECESARIA
+================================================================================
+
+El proyecto DEBE tener esta estructura exacta:
+
+ProyectoWeb_FullStack/
+├── docker/
+│   ├── compose.yaml          ← Archivo principal
+│   ├── docker-compose.yaml   ← Copia de compatibilidad
+│   ├── iniciar.bat           ← Script Windows
+│   ├── iniciar.sh           ← Script Linux/Mac
+│   ├── README.md
+│   └── init-scripts/
+│       └── kpis-realm.json  ← Configuración Keycloak
+│
+├── backend/
+│   └── SistemaKpis/
+│       ├── Dockerfile
+│       ├── SistemaKpis.sln
+│       └── [demas archivos .NET]
+│
+└── frontend/
+    └── sistema-kpis-frontend/
+        ├── Dockerfile
+        ├── nginx.conf
+        ├── package.json
+        └── [demas archivos Angular]
+
+IMPORTANTE: No cambiar la ubicación de los archivos ni renombrar carpetas.
+
+================================================================================
+                       MÉTODO 1: WINDOWS (RECOMENDADO)
+================================================================================
+
+Paso 1: Abre una terminal (CMD o PowerShell)
+
+Paso 2: Navega a la carpeta docker:
+    cd ruta-del-proyecto\docker
+    (ejemplo: cd C:\Users\tu-usuario\ProyectoWeb_FullStack\docker)
+
+Paso 3: Ejecuta el script:
+    iniciar.bat
+
+Paso 4: Espera a que termine (~3-5 minutos la primera vez)
+
+¡Listo! Abre tu navegador y ve a:
+    http://localhost:4200
+
+================================================================================
+                    MÉTODO 2: DOCKER COMANDO DIRECTO
+================================================================================
+
+Si prefieres usar Docker directamente:
+
+Paso 1: Abre una terminal
+
+Paso 2: Navega a la carpeta docker:
+    cd ruta-del-proyecto\docker
+
+Paso 3: Ejecuta:
+    docker compose up -d --build
+
+Paso 4: Espera (~3-5 minutos)
+
+================================================================================
+                    MÉTODO 3: LINUX / MAC
+================================================================================
+
+Paso 1: Abre una terminal
+
+Paso 2: Navega a la carpeta docker:
+    cd ruta-del-proyecto/docker
+
+Paso 3: Ejecuta:
+    chmod +x iniciar.sh
+    ./iniciar.sh
+
+O directamente:
+    docker compose up -d --build
+
+================================================================================
+                         VERIFICAR QUE FUNCIONA
+================================================================================
+
+Abre una terminal y ejecuta:
+
+    docker compose ps
+
+Deberías ver 4 contenedores "Up":
+    - kpis_postgres    (Up)
+    - kpis_keycloak    (Up)
+    - kpis_backend     (Up)
+    - kpis_frontend    (Up)
+
+Verifica salud con curl:
+    curl http://localhost:5129/health      -> Backend
+    curl http://localhost:8080/health/ready -> Keycloak
+    curl http://localhost:4200/health      -> Frontend
+
+================================================================================
+                           ACCESOS
+================================================================================
+
+| Servicio  | URL                    | Credenciales        |
+|-----------|------------------------|---------------------|
+| Frontend  | http://localhost:4200  | -                   |
+| Keycloak  | http://localhost:8080  | admin / admin       |
+| Backend   | http://localhost:5129   | -                   |
+| PostgreSQL| localhost:5432          | postgres / 12345678 |
+
+================================================================================
+                      USUARIOS DE PRUEBA
+================================================================================
+
+Ya vienen creados automáticamente:
+    admin / admin123  (rol: admin)
+    user  / user123   (rol: user)
+
+================================================================================
+                         COMANDOS ÚTILES
+================================================================================
+
+Ver estado:
+    docker compose ps
+
+Ver logs:
+    docker compose logs -f
+
+Detener:
+    docker compose down
+
+Detener y borrar datos:
+    docker compose down -v
+
+Reconstruir todo:
+    docker compose up -d --build
+
+Reiniciar un servicio:
+    docker compose restart backend
+
+================================================================================
+                      SOLUCIÓN DE PROBLEMAS
+================================================================================
+
+ERROR: "no such file or directory"
+→ Verifica que la estructura de carpetas sea correcta
+
+ERROR: Puerto en uso
+→ Ejecuta: netstat -ano | findstr "4200 5129 5432 8080"
+→ Cierra los programas que usen esos puertos
+
+Los servicios no inician
+→ Ejecuta: docker compose logs
+→ Revisa los errores en los logs
+
+Keycloak tarda mucho
+→ Es normal, puede tardar hasta 90 segundos
+
+Todo funciona pero el frontend no carga
+→ Espera 30 segundos más
+→ Verifica: docker compose logs frontend
+
+================================================================================
+                          ¡FIN!
+================================================================================
+
+Si seguiste los pasos, tu sistema debería estar funcionando en:
+    http://localhost:4200

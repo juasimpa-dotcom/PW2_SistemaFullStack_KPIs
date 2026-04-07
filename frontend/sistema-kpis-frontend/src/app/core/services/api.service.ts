@@ -1,4 +1,4 @@
-import { Injectable } from '@angular/core';
+import { Injectable, inject } from '@angular/core';
 import { HttpClient, HttpHeaders } from '@angular/common/http';
 import { Observable } from 'rxjs';
 import { AuthService } from '../auth/auth.service';
@@ -74,18 +74,33 @@ export interface Venta {
   estado: string;
 }
 
+export interface Servicio {
+  id: number;
+  nombre: string;
+  precioActual: number;
+  descripcion: string;
+}
+
+export interface Periodo {
+  id: number;
+  nombre: string;
+  fechaInicio: string;
+  fechaFin: string;
+  tipo: string;
+}
+
 @Injectable({ providedIn: 'root' })
 export class ApiService {
-  private baseUrl = 'http://localhost:5128/api';
+  private baseUrl = 'http://localhost:5129/api';
+  private authService = inject(AuthService);
 
-  constructor(private http: HttpClient, private auth: AuthService) {}
+  constructor(private http: HttpClient) {}
 
   private getHeaders(): HttpHeaders {
-    const token = this.auth.getToken();
-    return new HttpHeaders({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token}` });
+    const token = this.authService.getToken();
+    return new HttpHeaders({ 'Content-Type': 'application/json', 'Authorization': `Bearer ${token || ''}` });
   }
 
-  // KPIs
   getKpisVendedor(fechaInicio: string, fechaFin: string): Observable<KpiVendedor> {
     return this.http.get<KpiVendedor>(`${this.baseUrl}/kpis/vendedor?fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`, { headers: this.getHeaders() });
   }
@@ -112,14 +127,13 @@ export class ApiService {
     return this.http.get<ResumenEquipo>(`${this.baseUrl}/kpis/resumen-equipo?fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`, { headers: this.getHeaders() });
   }
 
-  // Usuarios
   getVendedores(buscar?: string): Observable<Usuario[]> {
     let url = `${this.baseUrl}/usuarios`;
     if (buscar) url += `?buscar=${buscar}`;
     return this.http.get<Usuario[]>(url, { headers: this.getHeaders() });
   }
 
-  crearVendedor(data: { keycloakId: string; nombreCompleto: string; correo: string }): Observable<Usuario> {
+  crearVendedor(data: { keycloakId: string | null; nombreCompleto: string; correo: string }): Observable<Usuario> {
     return this.http.post<Usuario>(`${this.baseUrl}/usuarios`, data, { headers: this.getHeaders() });
   }
 
@@ -131,7 +145,16 @@ export class ApiService {
     return this.http.delete<void>(`${this.baseUrl}/usuarios/${id}`, { headers: this.getHeaders() });
   }
 
-  // Metas
+  eliminarMeta(id: number): Observable<void> {
+    return this.http.delete<void>(`${this.baseUrl}/metas/${id}`, { headers: this.getHeaders() });
+  }
+
+  exportarReporte(fechaInicio: string, fechaFin: string, vendedorId?: number): Observable<Blob> {
+    let url = `${this.baseUrl}/kpis/exportar?fechaInicio=${fechaInicio}&fechaFin=${fechaFin}`;
+    if (vendedorId) url += `&vendedorId=${vendedorId}`;
+    return this.http.get(url, { headers: this.getHeaders(), responseType: 'blob' });
+  }
+
   getMetas(vendedorId?: number): Observable<Meta[]> {
     let url = `${this.baseUrl}/metas`;
     if (vendedorId) url += `?vendedorId=${vendedorId}`;
@@ -142,7 +165,14 @@ export class ApiService {
     return this.http.post<Meta>(`${this.baseUrl}/metas`, data, { headers: this.getHeaders() });
   }
 
-  // Ventas
+  getPeriodos(): Observable<Periodo[]> {
+    return this.http.get<Periodo[]>(`${this.baseUrl}/metas/periodos`, { headers: this.getHeaders() });
+  }
+
+  getPeriodoActual(): Observable<Periodo> {
+    return this.http.get<Periodo>(`${this.baseUrl}/metas/periodo-actual`, { headers: this.getHeaders() });
+  }
+
   getMisVentas(fechaInicio?: string, fechaFin?: string): Observable<Venta[]> {
     let url = `${this.baseUrl}/ventas/mis-ventas`;
     const params: string[] = [];
@@ -152,12 +182,19 @@ export class ApiService {
     return this.http.get<Venta[]>(url, { headers: this.getHeaders() });
   }
 
-  registrarVenta(data: { clienteId: number; montoTotal: number; cantidadServicios?: number }): Observable<Venta> {
+  getServicios(): Observable<Servicio[]> {
+    return this.http.get<Servicio[]>(`${this.baseUrl}/servicios`, { headers: this.getHeaders() });
+  }
+
+  registrarVenta(data: { nombreCliente?: string; clienteId: number; montoTotal: number; cantidadServicios?: number; servicioId?: number }): Observable<Venta> {
     return this.http.post<Venta>(`${this.baseUrl}/ventas`, data, { headers: this.getHeaders() });
   }
 
-  // Perfil
   getMiPerfil(): Observable<any> {
     return this.http.get<any>(`${this.baseUrl}/ventas/mi-perfil`, { headers: this.getHeaders() });
+  }
+
+  sincronizarUsuario(): Observable<Usuario> {
+    return this.http.post<Usuario>(`${this.baseUrl}/sync/sync-user`, {}, { headers: this.getHeaders() });
   }
 }

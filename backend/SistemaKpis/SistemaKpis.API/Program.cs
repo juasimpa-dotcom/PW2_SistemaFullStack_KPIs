@@ -95,7 +95,7 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                 // Obtener resource_access del token
                 var resourceAccessClaim = context.Principal?.FindFirst("resource_access");
-                if (resourceAccessClaim != null)
+                if (resourceAccessClaim != null && !string.IsNullOrEmpty(resourceAccessClaim.Value))
                 {
                     try
                     {
@@ -104,7 +104,8 @@ builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
 
                         // Buscar roles para el client
                         var clientId = builder.Configuration["Keycloak:ClientId"];
-                        if (root.TryGetProperty(clientId, out var clientRoles) &&
+                        if (!string.IsNullOrEmpty(clientId) && 
+                            root.TryGetProperty(clientId, out var clientRoles) &&
                             clientRoles.TryGetProperty("roles", out var rolesArray))
                         {
                             foreach (var role in rolesArray.EnumerateArray())
@@ -175,10 +176,9 @@ app.UseAuthentication();
 app.UseAuthorization();
 app.MapControllers();
 
-app.MapControllers();
-
 // Endpoint público para health check
 app.MapGet("/", () => "Sistema KPIs API - Running ✅");
+app.MapGet("/health", () => Results.Ok(new { status = "healthy", timestamp = DateTime.UtcNow }));
 
 // Endpoint para obtener token (solo desarrollo)
 app.MapPost("/auth/login", async (HttpContext context, IConfiguration config) =>

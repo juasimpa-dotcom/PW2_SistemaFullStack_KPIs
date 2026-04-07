@@ -1,4 +1,4 @@
-﻿using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 using Microsoft.EntityFrameworkCore;
 using SistemaKpis.Core.Entidades.Catalogos;
@@ -15,7 +15,6 @@ public class VentasController : ControllerBase
     private readonly KpisDbContext _context;
     private readonly ILogger<VentasController> _logger;
 
-    // ⚠️ AJUSTA ESTOS IDs según lo que viste en SELECT * FROM roles;
     private const int ROL_SUPERVISOR_ID = 1;
     private const int ROL_VENDEDOR_ID = 2;
 
@@ -25,10 +24,10 @@ public class VentasController : ControllerBase
         _logger = logger;
     }
 
-    // 🔐 Helper: Obtener usuario autenticado desde token Keycloak
     private async Task<Usuario?> ObtenerUsuarioAutenticado()
     {
-        var keycloakId = User.FindFirst("sub")?.Value;
+        var keycloakId = User.FindFirst("sub")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(keycloakId) || !Guid.TryParse(keycloakId, out var keycloakGuid))
             return null;
 
@@ -41,17 +40,38 @@ public class VentasController : ControllerBase
     private bool EsVendedor(Usuario u) => u.RolId == ROL_VENDEDOR_ID;
 
     [HttpPost]
-    public async Task<ActionResult<Venta>> RegistrarVenta(RegistrarVentaRequest request)
+    public async Task<ActionResult<VentaFrontDto>> RegistrarVenta(RegistrarVentaRequest request)
     {
         var usuario = await ObtenerUsuarioAutenticado();
         if (usuario == null) return Unauthorized("Usuario no encontrado");
         if (!EsVendedor(usuario))
             return Forbid("Solo los vendedores pueden registrar ventas");
 
+        if (request.MontoTotal <= 0)
+            return BadRequest("El monto total debe ser mayor a 0");
+
+        int clienteId = 1;
+        
+        if (!string.IsNullOrWhiteSpace(request.NombreCliente))
+        {
+            var clienteExistente = await _context.Clientes.FirstOrDefaultAsync(c => c.NombreCompleto == request.NombreCliente);
+            if (clienteExistente != null)
+            {
+                clienteId = clienteExistente.Id;
+            }
+            else
+            {
+                var nuevoCliente = new Cliente { NombreCompleto = request.NombreCliente, Activo = true };
+                _context.Clientes.Add(nuevoCliente);
+                await _context.SaveChangesAsync();
+                clienteId = nuevoCliente.Id;
+            }
+        }
+
         var venta = new Venta
         {
             UsuarioId = usuario.Id,
-            ClienteId = request.ClienteId,
+            ClienteId = clienteId,
             FechaVenta = request.FechaVenta ?? DateTime.UtcNow,
             MontoTotal = request.MontoTotal,
             CantidadServicios = request.CantidadServicios ?? 1,
@@ -61,11 +81,37 @@ public class VentasController : ControllerBase
         _context.Ventas.Add(venta);
         await _context.SaveChangesAsync();
 
-        return CreatedAtAction(nameof(ObtenerVenta), new { id = venta.Id }, venta);
+        if (request.ServicioId > 0)
+        {
+            var servicio = await _context.Servicios.FindAsync(request.ServicioId);
+            if (servicio != null)
+            {
+                var detalle = new DetalleVenta
+                {
+                    VentaId = venta.Id,
+                    ServicioId = request.ServicioId,
+                    Cantidad = request.CantidadServicios ?? 1,
+                    PrecioUnitario = servicio.PrecioActual,
+                    Subtotal = request.MontoTotal
+                };
+                _context.DetallesVenta.Add(detalle);
+                await _context.SaveChangesAsync();
+            }
+        }
+
+        var cliente = await _context.Clientes.FindAsync(clienteId);
+        return Ok(new VentaFrontDto(
+            venta.Id,
+            cliente?.NombreCompleto ?? "Sin cliente",
+            venta.MontoTotal,
+            venta.CantidadServicios,
+            venta.FechaVenta,
+            venta.Estado
+        ));
     }
 
     [HttpGet("mis-ventas")]
-    public async Task<ActionResult<List<VentaDto>>> ObtenerMisVentas(
+    public async Task<ActionResult<List<VentaFrontDto>>> ObtenerMisVentas(
         [FromQuery] DateTime? fechaInicio, [FromQuery] DateTime? fechaFin)
     {
         var usuario = await ObtenerUsuarioAutenticado();
@@ -79,10 +125,9 @@ public class VentasController : ControllerBase
         if (fechaInicio.HasValue) query = query.Where(v => v.FechaVenta >= fechaInicio.Value);
         if (fechaFin.HasValue) query = query.Where(v => v.FechaVenta <= fechaFin.Value);
 
-        // ✅ CORREGIDO: Usar condición ternaria en lugar de ?.
         var ventas = await query
             .OrderByDescending(v => v.FechaVenta)
-            .Select(v => new VentaDto(
+            .Select(v => new VentaFrontDto(
                 v.Id,
                 v.Cliente != null ? v.Cliente.NombreCompleto : "Sin cliente",
                 v.MontoTotal,
@@ -169,12 +214,14 @@ public class VentasController : ControllerBase
 }
 
 public record RegistrarVentaRequest(
+    string? NombreCliente,
     int ClienteId,
     decimal MontoTotal,
     int? CantidadServicios,
-    DateTime? FechaVenta);
+    DateTime? FechaVenta,
+    int ServicioId = 0);
 
-public record VentaDto(
+public record VentaFrontDto(
     int Id,
     string Cliente,
     decimal Monto,

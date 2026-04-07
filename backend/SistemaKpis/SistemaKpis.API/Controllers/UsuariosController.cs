@@ -24,7 +24,8 @@ public class UsuariosController : ControllerBase
 
     private async Task<Usuario?> ObtenerUsuarioAutenticado()
     {
-        var keycloakId = User.FindFirst("sub")?.Value;
+        var keycloakId = User.FindFirst("sub")?.Value 
+            ?? User.FindFirst(System.Security.Claims.ClaimTypes.NameIdentifier)?.Value;
         if (string.IsNullOrEmpty(keycloakId) || !Guid.TryParse(keycloakId, out var keycloakGuid))
             return null;
         return await _context.Usuarios
@@ -34,8 +35,22 @@ public class UsuariosController : ControllerBase
 
     private bool EsSupervisor(Usuario? u) => u?.RolId == ROL_SUPERVISOR_ID;
 
+    [HttpGet("todos")]
+    public async Task<ActionResult<List<UsuarioDto>>> ObtenerTodosLosUsuarios()
+    {
+        var usuario = await ObtenerUsuarioAutenticado();
+        if (usuario == null) return Unauthorized();
+        
+        var query = _context.Usuarios.Include(u => u.Rol).Where(u => u.Activo).AsQueryable();
+
+        var usuarios = await query.OrderBy(u => u.NombreCompleto)
+            .Select(u => new UsuarioDto(u.Id, u.KeycloakId, u.NombreCompleto, u.Correo, u.Rol.Nombre, u.Activo, u.FechaCreacion))
+            .ToListAsync();
+        return Ok(usuarios);
+    }
+
     [HttpGet]
-    public async Task<ActionResult<List<UsuarioDto>>> ObtenerVendedores([FromQuery] string? buscar, [FromQuery] bool soloActivos = true)
+    public async Task<ActionResult<List<UsuarioDto>>> ObtenerVendedores([FromQuery] string? buscar, [FromQuery] bool soloActivos = false)
     {
         var usuario = await ObtenerUsuarioAutenticado();
         if (usuario == null) return Unauthorized();
@@ -71,10 +86,12 @@ public class UsuariosController : ControllerBase
         if (usuario == null) return Unauthorized();
         if (!EsSupervisor(usuario)) return Forbid();
 
-        var existe = await _context.Usuarios.AnyAsync(u => u.Correo == request.Correo || u.KeycloakId == request.KeycloakId);
-        if (existe) return BadRequest("Ya existe un usuario con este correo o KeycloakId");
+        var existe = await _context.Usuarios.AnyAsync(u => u.Correo == request.Correo);
+        if (existe) return BadRequest("Ya existe un usuario con este correo");
 
-        var vendedor = new Usuario { KeycloakId = request.KeycloakId, RolId = ROL_VENDEDOR_ID, NombreCompleto = request.NombreCompleto, Correo = request.Correo, Activo = true };
+        var keycloakId = request.KeycloakId ?? Guid.NewGuid();
+
+        var vendedor = new Usuario { KeycloakId = keycloakId, RolId = ROL_VENDEDOR_ID, NombreCompleto = request.NombreCompleto, Correo = request.Correo, Activo = true };
         _context.Usuarios.Add(vendedor);
         await _context.SaveChangesAsync();
 
@@ -118,6 +135,5 @@ public class UsuariosController : ControllerBase
     }
 }
 
-public record UsuarioDto(int Id, Guid KeycloakId, string NombreCompleto, string Correo, string Rol, bool Activo, DateTime FechaCreacion);
-public record CrearVendedorRequest(Guid KeycloakId, string NombreCompleto, string Correo);
+public record CrearVendedorRequest(Guid? KeycloakId, string NombreCompleto, string Correo);
 public record ActualizarVendedorRequest(string NombreCompleto, string Correo, bool Activo);
